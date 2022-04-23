@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+//#region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+import Ray                          from '../src/Ray';
+import { from3JSScreenProjection }  from './_lib/UtilRay.js';
+import { Transform, vec3 }          from 'oito';
+
+import { OrientedBBox, RayObbResult } from '../src/OrientedBBox';
+//#endregion
+
+//#region MAIN
+let App;
+let Debug   = {};
+let Ref     = {
+    transform : new Transform(),
+    min : [ -0.5,-0.5,-0.5 ],
+    max : [ 0.5,0.5,0.5 ],
+    box : null,   
+};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 4, [0,0.8,0] );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Ref.transform.pos.xyz( -1, 1, -5.5 );
+    Ref.transform.rot.fromEuler( -45, 45, 45 );
+
+    Ref.box = new OrientedBBox( Ref.min, Ref.max );
+    Ref.box.applyTransform( Ref.transform );
+
+    const points = vec_box( Ref.box.minBound, Ref.box.maxBound );
+    pointToBox( points, Ref.transform );
+
+    Debug.pnt.add( Ref.box.worldPosition, 0x00ff00, 2 );
+
+    // Debug.ln.add( Ref.box.worldPosition, vec3.scaleThenAdd( Ref.box.orientation[0], 1, Ref.box.worldPosition, [0,0,0] ), 0xff0000 );
+    // Debug.ln.add( Ref.box.worldPosition, vec3.scaleThenAdd( Ref.box.orientation[1], 1, Ref.box.worldPosition, [0,0,0] ), 0x00ff00 );
+    // Debug.ln.add( Ref.box.worldPosition, vec3.scaleThenAdd( Ref.box.orientation[2], 1, Ref.box.worldPosition, [0,0,0] ), 0x0000ff );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointerdown", e=>{
+    if( e.button != 2 ) return;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Compute the Ray and visually draw a line
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    Debug.ln.add( ray.posStart, ray.posEnd, 0x00ffff );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const results = new RayObbResult();
+    if( Ref.box.rayIntersect( ray, results ) ){
+        const v = [0,0,0];
+        const d = [0,0,0];
+
+        //---------------------------
+        // Entry
+        ray.posAt( results.tMin, v );
+        vec3.scaleThenAdd( results.entryNorm, 0.2, v, d );
+
+        Debug.pnt.add( v, 0x00ff00, 2 );
+        Debug.ln.add( v, d, 0x00ff00 );
+
+        //---------------------------
+        // Exit
+        ray.posAt( results.tMax, v );
+        vec3.scaleThenAdd( results.exitNorm, 0.2, v, d );
+        
+        Debug.pnt.add( v, 0xff0000, 2 );
+        Debug.ln.add( v, d, 0xff0000 );
+    }
+} );
+
+//#endregion
+
+//#region LOREM
+
+function vec_box( v1, v2 ){ return raw_box( v1[0], v1[1], v1[2], v2[0],v2[1],v2[2] ); }
+function raw_box( x1, y1, z1, x2, y2, z2 ){ // Min -> Max to creating a bounding box.
+    /*
+    b0 --- b1    t0 --- t1
+     |     |      |     |
+     |     |      |     |
+    b3 --- b2    t3 --- t2
+    */
+    const b0 = [x1,y1,z1]; 
+    const b1 = [x2,y1,z1];
+    const b2 = [x2,y1,z2];
+    const b3 = [x1,y1,z2];
+    const t0 = [x1,y2,z1];
+    const t1 = [x2,y2,z1];
+    const t2 = [x2,y2,z2];
+    const t3 = [x1,y2,z2];
+    return [ b0, b1, b2, b3, t0, t1, t2, t3 ];
+}
+
+function pointToBox( pnts, tran ){
+    if( tran ){
+        for( let i of pnts ) tran.transformVec3( i );
+    }
+
+    let ii;
+    for( let i=0; i < 4; i++ ){
+        ii = (i + 1) % 4;
+        Debug.ln.add( pnts[ i ], pnts[ ii ], 0x00ff00 );        // Bottom square
+        Debug.ln.add( pnts[ i+4 ], pnts[ ii+4 ], 0x00ff00 );    // Top square
+        Debug.ln.add( pnts[ i ], pnts[ i+4 ], 0x00ff00 );       // Sides
+    }
+}
+
+//#endregion
+
+</script>
+</body></html>
