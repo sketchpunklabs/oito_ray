@@ -1,0 +1,365 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+//#region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+
+import Ray                          from '../src/Ray';
+import { nearSegment, NearSegmentResult }
+                                    from '../src/intersects/nearSegment';
+import intersectTri                 from '../src/intersects/intersectTri';
+import intersectPlane               from '../src/intersects/intersectPlane';
+import { from3JSScreenProjection }  from './_lib/UtilRay.js';
+
+import { vec3 }                     from 'oito';
+//#endregion
+
+//#region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+function onRender( dt=0, et=0 ){
+    Ref.data.update( App.camera.position.toArray() );
+    Ref.rend.update( Ref.data );
+
+    App.orbit.enabled = !Ref.data.isDragging;
+}
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 4, [0,0.8,0] );
+    App.onRender = onRender;
+
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const data = new TranslateData();
+    const rend = new TranslateRender();
+
+    //data.onTranslate = p=>console.log( 'Translate', p );
+
+    data.setPos( 0, 0.5, 0 );
+
+    //console.log( rend );
+    rend.toScene( App );
+    rend.update( data );
+
+    Ref.data = data;
+    Ref.rend = rend;
+  
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointermove", e=>{
+    //if( e.button != 2 ) return;
+
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    if( !Ref.data.isDragging ) Ref.data.onRayHover( ray );
+    else                       Ref.data.onRayMove( ray );
+} );
+
+window.addEventListener( "pointerdown", e=>{
+    //if( e.button != 2 ) return;
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    Ref.data.onRayDown( ray );
+} );
+
+window.addEventListener( "pointerup", e=>{
+    if( Ref.data.isDragging ) Ref.data._stopDrag();
+} );
+//#endregion
+
+
+
+//#region LOREM
+
+class TranslateData{
+    // #region MAIN
+    scaleFactor     = 8;            // Rescale axes based on camera distance, to keep gizmo about the same size
+    minFlipAdjust   = -0.02;	    // Dot Angle minimum to flip Gizmo
+    minHitDistance  = 0.1 ** 2;     // Min Distance to consider touching an axis segment
+    lastCamPos      = [0,0,0];      // Store last cam position to be able to recompute while dragging
+    hasUpdated      = true;         // Indicator that the data has changed
+    isDragging      = false;        // Is the gizmo currently being dragged by the user
+
+    position        = [0,0,0];      // Position in world space
+    scale           = [1,1,1];      // Scale based on angle from camera & distance
+
+    axes            = [             // Information about each axis
+        { dir: [1,0,0], pos:[1,0,0], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // X
+        { dir: [0,1,0], pos:[0,1,0], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Y
+        { dir: [0,0,1], pos:[0,0,1], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Z
+    ];
+
+    activeAxis      = -1;
+    activePlane     = -1;
+
+    onTranslate     = null;
+    // #endregion
+
+    // #region METHODS
+    setPos( x,y,z ){
+        if( x.length === 3 ){
+            this.position[ 0 ] = x[0];
+            this.position[ 1 ] = x[0];
+            this.position[ 2 ] = x[0];
+        }else{
+            this.position[ 0 ] = x;
+            this.position[ 1 ] = y;
+            this.position[ 2 ] = z;
+        }
+
+        this.hasUpdated = true;
+        return this;
+    }
+
+    update( camPos ){
+        if( this.isDragging ||
+            Math.abs( vec3.lenSq( camPos, this.lastCamPos ) ) < 0.00001 
+        ) return;
+
+        vec3.copy( camPos, this.lastCamPos );
+        this._calcCameraScale();
+        return this;
+    }
+    // #endregion
+
+    // #region DRAGGING
+    _startDrag(){ this.isDragging = true;  }
+    _stopDrag(){  this.isDragging = false; }
+
+    _moveAxis( ray, i){
+        const segResult = new NearSegmentResult();
+        let axis        = this.axes[ i ].tracePoints;
+
+        if( nearSegment( ray, axis.a, axis.b, segResult ) ){
+
+            vec3.copy( segResult.segPosition, this.position );
+            this._calcAxesPosition(); //this._calcCameraScale();
+
+            if( this.onTranslate ) this.onTranslate( this.position.slice( 0 ) );
+            return true;
+        }
+
+        return false;
+    }
+
+    _movePlane( ray, i ){
+        const norm = this.axes[ i ].dir;
+        const t    = intersectPlane( ray, this.position, norm );
+
+        if( t != null ){
+            ray.posAt( t, this.position );
+            this._calcAxesPosition();
+
+            if( this.onTranslate ) this.onTranslate( this.position.slice( 0 ) );
+            return true;
+        }
+
+        return false;
+    }
+    
+    onRayDown( ray ){
+        if( this._rayIntersect( ray ) ){
+            this._startDrag();
+            return true;
+        }
+        return false
+    }
+
+    onRayHover( ray ){
+        return ( !this.isDragging )? this._rayIntersect( ray ) : false;
+    }
+
+    onRayMove( ray ){
+        if( !this.isDragging ) return false;
+
+        if( this.activeAxis != -1 )  return this._moveAxis( ray, this.activeAxis );
+        if( this.activePlane != -1 ) return this._movePlane( ray, this.activePlane );
+
+        return false;
+    }
+    // #endregion
+
+    _activateAxis( idx ){
+        const ax    = this.axes[ idx ];
+        ax.isActive = true;
+        vec3.scaleThenAdd( ax.dir, -1000, this.position, ax.tracePoints.a );
+        vec3.scaleThenAdd( ax.dir,  1000, this.position, ax.tracePoints.b );
+    }
+
+    // #region COMPUTE
+    _calcCameraScale(){
+        //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Adjust the scale to keep the gizmo as the same size no matter how far the camera goes
+        const eyeDir = vec3.sub( this.lastCamPos, this.position, [0,0,0] );
+        const eyeLen = vec3.len( eyeDir );
+        
+        vec3.norm( eyeDir ); // Normalize for DOT Checks
+        vec3.scale( [1,1,1], eyeLen / this.scaleFactor, this.scale );
+
+        //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Flip viewing to the opposite side
+        if( vec3.dot( eyeDir, [1,0,0] ) < this.minFlipAdjust ) this.scale[0] = -this.scale[0];
+        if( vec3.dot( eyeDir, [0,1,0] ) < this.minFlipAdjust ) this.scale[1] = -this.scale[1];
+        if( vec3.dot( eyeDir, [0,0,1] ) < this.minFlipAdjust ) this.scale[2] = -this.scale[2];
+
+        //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Update the axis positions
+        this._calcAxesPosition();
+    }
+
+    _calcAxesPosition(){
+        const a = this.axes;
+        vec3.scaleThenAdd( a[0].dir, this.scale[0], this.position, a[0].pos );
+        vec3.scaleThenAdd( a[1].dir, this.scale[1], this.position, a[1].pos );
+        vec3.scaleThenAdd( a[2].dir, this.scale[2], this.position, a[2].pos );
+
+        vec3.scaleThenAdd( a[0].dir, this.scale[0] * 0.4, this.position, a[0].midPos );
+        vec3.scaleThenAdd( a[1].dir, this.scale[1] * 0.4, this.position, a[1].midPos );
+        vec3.scaleThenAdd( a[2].dir, this.scale[2] * 0.4, this.position, a[2].midPos );
+
+        this.hasUpdated = true;
+    }
+    // #endregion
+
+    // #region RAY INTERSECTION
+    _rayIntersect( ray ){
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Reset axis & collect last axes state
+        const lastState = [ false, false, false ];
+        const a         = this.axes;
+        let   hit       = false;
+        let i, ii, ax;
+        for( i=0; i < 3; i++ ){
+            ax = a[ i ];
+            if( ax.isActive ){
+                lastState[ i ] = true;
+                ax.isActive    = false;
+            }
+        }
+
+        this.activeAxis  = -1;
+        this.activePlane = -1;
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        if( ! (hit = this._testPlanes( ray )) ){
+            hit = this._testAxis( ray );
+        }
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        for( i=0; i < 3; i++ ){
+            if( a[i].isActive != lastState[i] ){
+                this.hasUpdated = true;
+                break;
+            }
+        }
+
+        return hit;
+    }
+
+    _testPlanes( ray ){
+        // Test each axis plane by using triangle points
+        const a = this.axes;
+        let i, ii;
+        for( i=0; i < 3; i++ ){  // 0:1 = Z(2), 1:2 = X(0), 2:0 = Y(1) 
+            ii = ( i + 1 ) % 3;
+            if( intersectTri( ray, a[ i ].midPos, a[ ii ].midPos, this.position, null, false ) ){
+                this._activateAxis( i );
+                this._activateAxis( ii );
+                this.activePlane = (i + 2) % 3;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    _testAxis( ray ){
+        const segResult = new NearSegmentResult();
+        let min         = Infinity;
+        let axis        = -1;
+        let ax;
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        for( let i=0; i < 3; i++ ){
+            ax = this.axes[ i ];
+            
+            // Find the axis with the shortest distance
+            if( nearSegment( ray, this.position, ax.pos, segResult ) ){
+                if( segResult.distanceSq <= this.minHitDistance && segResult.distanceSq < min ){
+                    min             = segResult.distanceSq;
+                    axis            = i;
+                }
+            }
+        }
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        if( axis !== -1 ){
+            this._activateAxis( axis );
+            this.activeAxis = axis;
+            return true;
+        }
+
+        return false;
+    }
+    // #endregion
+}
+
+class TranslateRender{
+    meshAxis    = new DynLineMesh();
+    meshPoints  = new ShapePointsMesh();
+    constructor(){}
+
+    toScene( scene ){
+        scene.add( this.meshAxis );
+        scene.add( this.meshPoints );
+    }
+
+    update( data ){
+        if( data.hasUpdated ){
+            data.hasUpdated = false;
+            //console.log( 'draw' );
+
+            const a = [0,0,0];
+            const b = [0,0,0];
+            this.meshAxis.reset();
+            this.meshAxis.add( data.position, data.axes[0].pos, 0xffff00 );
+            this.meshAxis.add( data.position, data.axes[1].pos, 0x00ffff );
+            this.meshAxis.add( data.position, data.axes[2].pos, 0x00ff00 );
+
+            this.meshAxis.add( data.axes[0].midPos, data.axes[1].midPos, 0xffff00, 0x00ffff );
+            this.meshAxis.add( data.axes[1].midPos, data.axes[2].midPos, 0x00ffff, 0x00ff00 );
+            this.meshAxis.add( data.axes[2].midPos, data.axes[0].midPos, 0x00ff00, 0xffff00 );
+
+            const pntSize   = 8;
+            const pntShape  = 2;
+            this.meshPoints.reset();
+            this.meshPoints.add( data.axes[0].pos, 0xffff00, pntSize * Math.abs( data.scale[0] ), pntShape );
+            this.meshPoints.add( data.axes[1].pos, 0x00ffff, pntSize * Math.abs( data.scale[1] ), pntShape );
+            this.meshPoints.add( data.axes[2].pos, 0x00ff00, pntSize * Math.abs( data.scale[2] ), pntShape );
+
+            this.meshPoints.add( data.axes[0].midPos, 0xffff00, 3 * Math.abs( data.scale[0] ), 1 );
+            this.meshPoints.add( data.axes[1].midPos, 0x00ffff, 3 * Math.abs( data.scale[1] ), 1 );
+            this.meshPoints.add( data.axes[2].midPos, 0x00ff00, 3 * Math.abs( data.scale[2] ), 1 );
+
+            let ax;
+            for( let i=0; i < 3; i++ ){
+                ax = data.axes[ i ];
+                if( ax.isActive ){
+                    this.meshAxis.add( ax.tracePoints.a, ax.tracePoints.b, 0x909090 );
+                }
+            }
+        }
+    }
+}
+
+//#endregion
+
+</script>
+</body></html>

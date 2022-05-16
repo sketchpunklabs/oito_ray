@@ -35,12 +35,12 @@ class DynLineMesh extends THREE.LineSegments{
     }
 
     reset(){
-		this._cnt           = 0;
-		this._verts.length  = 0;
+        this._cnt           = 0;
+        this._verts.length  = 0;
         this._color.length  = 0;
         this._config.length = 0;
         this.geometry.setDrawRange( 0, 0 );
-		return this;
+        return this;
     }
 
     add( p0, p1, color0=this._defaultColor, color1=null, isDash=false ){
@@ -63,24 +63,24 @@ class DynLineMesh extends THREE.LineSegments{
         return this;
     }
 
-	box( v0, v1, col=ln_color, is_dash=false ){
-		let x1 = v0[0], y1 = v0[1], z1 = v0[2], 
-			x2 = v1[0], y2 = v1[1], z2 = v1[2];
+    box( v0, v1, col=ln_color, is_dash=false ){
+        let x1 = v0[0], y1 = v0[1], z1 = v0[2], 
+            x2 = v1[0], y2 = v1[1], z2 = v1[2];
 
-		this.add( [x1,y1,z1], [x1,y1,z2], col, null, is_dash ); // Bottom
-		this.add( [x1,y1,z2], [x2,y1,z2], col, null, is_dash );
-		this.add( [x2,y1,z2], [x2,y1,z1], col, null, is_dash );
-		this.add( [x2,y1,z1], [x1,y1,z1], col, null, is_dash );
-		this.add( [x1,y2,z1], [x1,y2,z2], col, null, is_dash ); // Top
-		this.add( [x1,y2,z2], [x2,y2,z2], col, null, is_dash );
-		this.add( [x2,y2,z2], [x2,y2,z1], col, null, is_dash );
-		this.add( [x2,y2,z1], [x1,y2,z1], col, null, is_dash );
-		this.add( [x1,y1,z1], [x1,y2,z1], col, null, is_dash ); // Sides
-		this.add( [x1,y1,z2], [x1,y2,z2], col, null, is_dash );
-		this.add( [x2,y1,z2], [x2,y2,z2], col, null, is_dash );
-		this.add( [x2,y1,z1], [x2,y2,z1], col, null, is_dash );
-		return this;
-	}
+        this.add( [x1,y1,z1], [x1,y1,z2], col, null, is_dash ); // Bottom
+        this.add( [x1,y1,z2], [x2,y1,z2], col, null, is_dash );
+        this.add( [x2,y1,z2], [x2,y1,z1], col, null, is_dash );
+        this.add( [x2,y1,z1], [x1,y1,z1], col, null, is_dash );
+        this.add( [x1,y2,z1], [x1,y2,z2], col, null, is_dash ); // Top
+        this.add( [x1,y2,z2], [x2,y2,z2], col, null, is_dash );
+        this.add( [x2,y2,z2], [x2,y2,z1], col, null, is_dash );
+        this.add( [x2,y2,z1], [x1,y2,z1], col, null, is_dash );
+        this.add( [x1,y1,z1], [x1,y2,z1], col, null, is_dash ); // Sides
+        this.add( [x1,y1,z2], [x1,y2,z2], col, null, is_dash );
+        this.add( [x2,y1,z2], [x2,y2,z2], col, null, is_dash );
+        this.add( [x2,y1,z1], [x2,y2,z1], col, null, is_dash );
+        return this;
+    }
 
     circle( origin, xAxis, yAxis, radius, seg, col=ln_color, is_dash=false ){
         const prevPos = [0,0,0];

@@ -3,7 +3,7 @@ import { vec3 }         from 'oito';
 import Ray              from '../Ray';
 
 // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
-export default function intersectTri( ray: Ray, v0: TVec3, v1: TVec3, v2: TVec3, out ?: TVec3, cullFace=true ){
+export default function intersectTri( ray: Ray, v0: TVec3, v1: TVec3, v2: TVec3, out ?: TVec3, cullFace=true ): boolean{
     const v0v1  = vec3.sub( v1, v0, [0,0,0] );
     const v0v2  = vec3.sub( v2, v0, [0,0,0] );
     const pvec 	= vec3.cross( ray.direction, v0v2, [0,0,0] );

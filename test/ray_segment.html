@@ -8,7 +8,7 @@ import Starter, { THREE }           from './_lib/Starter.js';
 import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
 import DynLineMesh                  from './_lib/DynLineMesh.js';
 import Ray                          from '../src/Ray';
-import nearSegment                  from '../src/intersects/nearSegment';
+import { nearSegment, NearSegmentResult } from '../src/intersects/nearSegment';
 import { from3JSScreenProjection }  from './_lib/UtilRay.js';
 
 import { vec3 }                     from 'oito';
@@ -45,14 +45,20 @@ window.addEventListener( "pointerdown", e=>{
     Debug.ln.add( ray.posStart, ray.posEnd, 0x00ffff );
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    const tAry = nearSegment( ray, Ref.posA, Ref.posB );
+    const results   = new NearSegmentResult();
+    const tAry      = nearSegment( ray, Ref.posA, Ref.posB, results );
 
     if( tAry != null ){
-        let rPos = ray.posAt( tAry[ 1 ] );
-        let sPos = vec3.lerp( Ref.posA, Ref.posB, tAry[ 0 ] );
-        Debug.pnt.add( rPos, 0x00ffff, 2 );
-        Debug.pnt.add( sPos, 0x00ff00, 2 );
-        Debug.ln.add( rPos, sPos, 0x00ffff, 0x00ff00 );
+        // let rPos = ray.posAt( tAry[ 1 ] );
+        // let sPos = vec3.lerp( Ref.posA, Ref.posB, tAry[ 0 ] );
+        // Debug.pnt.add( rPos, 0x00ffff, 2 );
+        // Debug.pnt.add( sPos, 0x00ff00, 2 );
+        // Debug.ln.add( rPos, sPos, 0x00ffff, 0x00ff00 );
+
+        Debug.pnt.add( results.rayPosition, 0x00ffff, 2 );
+        Debug.pnt.add( results.segPosition, 0x00ff00, 2 );
+        Debug.ln.add( results.rayPosition, results.segPosition, 0x00ffff, 0x00ff00 );
+        console.log( results.distanceSq );
     }
 } );
 //#endregion
