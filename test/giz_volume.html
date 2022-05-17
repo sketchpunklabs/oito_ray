@@ -1,0 +1,293 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+//#region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import facedCube                    from './_lib/FacedCube.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+
+import Ray                          from '../src/Ray';
+import intersectTri                 from '../src/intersects/intersectTri';
+import intersectPlane               from '../src/intersects/intersectPlane';
+import nearPoint                    from '../src/intersects/nearPoint';
+import { intersectSphere }          from '../src/intersects/intersectSphere';
+import { nearSegment, NearSegmentResult }
+                                    from '../src/intersects/nearSegment';
+
+import { from3JSScreenProjection }  from './_lib/UtilRay.js';
+
+import { vec3, quat }               from 'oito';
+//#endregion
+
+//#region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+function onRender( dt=0, et=0 ){
+    Ref.rend.update( Ref.data );
+    App.orbit.enabled = !Ref.data.isDragging;
+}
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 4, [0,0.8,0] );
+    App.onRender = onRender;
+
+    // App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    // App.add( ( Debug.ln  = new DynLineMesh() ) );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const data = new VolumeData();
+    const rend = new VolumeRender();
+
+    data.setPosition( [0, 0.6, 0] );
+
+    rend.toScene( App );
+    rend.update( data );
+
+    Ref.data = data;
+    Ref.rend = rend;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointermove", e=>{
+    //if( e.button != 2 ) return;
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    if( !Ref.data.isDragging ) Ref.data.onRayHover( ray );
+    else                       Ref.data.onRayMove( ray );
+} );
+
+window.addEventListener( "pointerdown", e=>{
+    //if( e.button != 2 ) return;
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    Ref.data.onRayDown( ray );
+} );
+
+window.addEventListener( "pointerup", e=>{
+    if( Ref.data.isDragging ) Ref.data._stopDrag();
+} );
+//#endregion
+
+
+//#region LOREM
+
+class VolumeData{
+    // #region MAIN
+    minPntDistance  = 0.035;
+    minFaceDistance = 0.1;
+    hasUpdated      = true;
+    isDragging      = false;
+    position        = [0,0,0];
+    minBound        = [Infinity,Infinity,Infinity];
+    maxBound        = [-Infinity,-Infinity,-Infinity];
+    activeFace      = -1;
+    faces           = [
+        { dir:[ 0, 0, 1], len:0.5, pos:[0,0,0] },
+        { dir:[ 0, 0,-1], len:0.5, pos:[0,0,0] },
+        { dir:[ 0, 1, 0], len:0.5, pos:[0,0,0] },
+        { dir:[ 0,-1, 0], len:0.5, pos:[0,0,0] },
+        { dir:[ 1, 0, 0], len:0.5, pos:[0,0,0] },
+        { dir:[-1, 0, 0], len:0.5, pos:[0,0,0] },
+    ];
+
+    traceStep       = 0.1;
+    traceLine       = { isActive:false, a:[0,0,0], b:[0,0,0], dir:[0,0,0] };
+
+    onDragStart     = null;
+    onDragEnd       = null;
+
+    constructor(){
+        this._recomputePositions();
+    }
+    // #endregion
+
+    // #region SETTERS
+    setPosition( pos ){
+        vec3.copy( pos, this.position );
+        this._recomputePositions();
+        return this;
+    }
+    // #endregion
+
+    // #region DRAGGING
+    _startDrag(){
+        this.isDragging = true;
+        console.log( 'start Drag' );
+        if( this.onDragStart ) this.onDragStart();
+    }
+
+    _stopDrag(){
+        this.isDragging = false;
+        if( this.onDragEnd ) this.onDragEnd();
+    }
+
+    onRayDown( ray ){
+        if( this._rayIntersect( ray ) ){
+            this._startDrag();
+            return true;
+        }
+        return false
+    }
+
+    onRayHover( ray ){
+        return ( !this.isDragging )? this._rayIntersect( ray ) : false;
+    }
+
+    onRayMove( ray ){
+        if( !this.isDragging ) return false;
+
+        const segResult = new NearSegmentResult();
+        if( nearSegment( ray, this.traceLine.a, this.traceLine.b, segResult ) ){
+
+            const f = this.faces[ this.activeFace ];
+            f.len = Math.max( vec3.len( this.position, segResult.segPosition ), this.minFaceDistance );
+            this._recomputePositions();
+
+            return true;
+        }
+
+        return false;
+    }
+    // #endregion
+
+    // #region HELPERS
+    _setTraceLine( pos, iFace ){
+        this.traceLine.isActive = true;
+
+        const face = this.faces[ iFace ];
+        vec3.copy( pos, this.traceLine.a );
+        vec3.scaleThenAdd( face.dir, 1000, pos, this.traceLine.b );
+    }
+    // #endregion
+
+    // #region COMPUTE
+    _recomputePositions(){
+        this.hasUpdated = true;
+
+        // Reset Bounds
+        vec3.copy( [ Infinity, Infinity, Infinity], this.minBound );
+        vec3.copy( [-Infinity,-Infinity,-Infinity], this.maxBound );
+        
+        // Compute face points & boundary area
+        let f;
+        for( f of this.faces ){
+            vec3.scaleThenAdd( f.dir, f.len, this.position, f.pos );
+            vec3.min( this.minBound, f.pos );
+            vec3.max( this.maxBound, f.pos );
+        }
+    }
+    // #endregion
+
+    // #region RAY INTERSECTION
+    _rayIntersect( ray ){
+        const lastState         = this.activeFace;
+        this.activeFace         = -1;
+        this.traceLine.isActive = false;
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        let hit = this._testPoints( ray );
+        if( lastState !== this.activeFace ) this.hasUpdated = true;
+
+        return hit;
+    }
+
+    _testPoints( ray ){            
+        let t = nearPoint( ray, this.position, this.minPntDistance );
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Test for origin, 
+        // if( t !== null ){
+        //     //this._setTraceLine( this.position );
+        //     //console.log( 'origin' );
+        //     this.activeFace = -2;
+        //     return true;
+        // }
+        
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        for( let i=0; i < this.faces.length; i++ ){
+            t = nearPoint( ray, this.faces[ i ].pos, this.minPntDistance );
+            if( t !== null ){
+                this._setTraceLine( this.position, i );
+                this.activeFace = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
+    // #endregion
+}
+
+class VolumeRender{
+    meshLines   = new DynLineMesh();
+    meshPoints  = new ShapePointsMesh();
+    constructor(){}
+
+    toScene( scene ){
+        scene.add( this.meshLines );
+        scene.add( this.meshPoints );
+    }
+
+    update( data ){
+        if( !data.hasUpdated ) return;
+        data.hasUpdated = false;
+        // console.log( 'draw' );
+
+        const pnt = this.meshPoints.reset();
+        const ln  = this.meshLines.reset();
+
+        // Origin Point
+        pnt.add( data.position, 0x909090, 4, 2 );
+
+        // Face Points
+        for( let f of data.faces ) pnt.add( f.pos, 0x909090, 2, 1 );
+
+        // TraceLine
+        if( data.traceLine.isActive ){
+            ln.add( data.traceLine.a, data.traceLine.b, 0x909090 );
+        }
+
+        // Box Lines
+        let col    = 0x909090;
+        let isDash = true;
+        let x1 = data.minBound[0], y1 = data.minBound[1], z1 = data.minBound[2], 
+            x2 = data.maxBound[0], y2 = data.maxBound[1], z2 = data.maxBound[2];
+
+        let a = [x1,y1,z1]; // bottom - top left corner - CCW
+        let b = [x1,y1,z2];
+        let c = [x2,y1,z2];
+        let d = [x2,y1,z1];
+        let e = [x1,y2,z1]; // bottom - top left corner - CCW
+        let f = [x1,y2,z2];
+        let g = [x2,y2,z2];
+        let h = [x2,y2,z1];
+
+        ln.add( a, b, col, null, isDash ); // Bottom
+        ln.add( b, c, col, null, isDash );
+        ln.add( c, d, col, null, isDash );
+        ln.add( d, a, col, null, isDash );
+
+        ln.add( e, f, col, null, isDash ); // Top
+        ln.add( f, g, col, null, isDash );
+        ln.add( g, h, col, null, isDash );
+        ln.add( h, e, col, null, isDash );
+
+        ln.add( a, e, col, null, isDash ); // Sides
+        ln.add( b, f, col, null, isDash );
+        ln.add( c, g, col, null, isDash );
+        ln.add( d, h, col, null, isDash );
+
+        ln._updateGeometry();
+        pnt._updateGeometry();
+    }
+}
+//#endregion
+
+</script>
+</body></html>
