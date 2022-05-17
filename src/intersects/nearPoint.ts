@@ -15,6 +15,6 @@ export default function nearPoint( ray: Ray, p: TVec3, distLimit=0.1 ) : number 
 
     if( t < 0 || t > 1 ) return null;                   // Over / Under shoots the Ray Segment
     const lenSqr = vec3.lenSq( ray.posAt( t, v ), p );  // Distance from point to nearest point on ray.
-    
+
     return ( lenSqr <= (distLimit*distLimit) )? t : null;
 }

@@ -82,7 +82,7 @@ class DynLineMesh extends THREE.LineSegments{
         return this;
     }
 
-    circle( origin, xAxis, yAxis, radius, seg, col=ln_color, is_dash=false ){
+    circle( origin, xAxis, yAxis, radius, seg, col=this._defaultColor, is_dash=false ){
         const prevPos = [0,0,0];
         const pos     = [0,0,0];
         const PI2     = Math.PI * 2;
@@ -91,6 +91,24 @@ class DynLineMesh extends THREE.LineSegments{
         planeCircle( origin, xAxis, yAxis, 0, radius, prevPos );
         for( let i=1; i <= seg; i++ ){
             rad = PI2 * ( i / seg );
+            planeCircle( origin, xAxis, yAxis, rad, radius, pos );
+            this.add( prevPos, pos, col, null, is_dash );
+
+            prevPos[0] = pos[0];
+            prevPos[1] = pos[1];
+            prevPos[2] = pos[2];
+        }
+    }
+
+    arc( origin, xAxis, yAxis, radius, seg, arcRad, initRad=0, col=this._defaultColor, is_dash=false ){
+        const prevPos = [0,0,0];
+        const pos     = [0,0,0];
+        const PI2     = Math.PI * 2;
+        let rad       = 0;
+
+        planeCircle( origin, xAxis, yAxis, 0, radius, prevPos );
+        for( let i=1; i <= seg; i++ ){
+            rad = arcRad * ( i / seg ) + initRad;
             planeCircle( origin, xAxis, yAxis, rad, radius, pos );
             this.add( prevPos, pos, col, null, is_dash );
 

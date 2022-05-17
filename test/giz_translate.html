@@ -5,17 +5,21 @@
 
 //#region IMPORTS
 import Starter, { THREE }           from './_lib/Starter.js';
+import facedCube                    from './_lib/FacedCube.js';
 import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
 import DynLineMesh                  from './_lib/DynLineMesh.js';
 
 import Ray                          from '../src/Ray';
-import { nearSegment, NearSegmentResult }
-                                    from '../src/intersects/nearSegment';
 import intersectTri                 from '../src/intersects/intersectTri';
 import intersectPlane               from '../src/intersects/intersectPlane';
+import nearPoint                    from '../src/intersects/nearPoint';
+import { intersectSphere }          from '../src/intersects/intersectSphere';
+import { nearSegment, NearSegmentResult }
+                                    from '../src/intersects/nearSegment';
+
 import { from3JSScreenProjection }  from './_lib/UtilRay.js';
 
-import { vec3 }                     from 'oito';
+import { vec3, quat }               from 'oito';
 //#endregion
 
 //#region MAIN
@@ -24,7 +28,7 @@ let Debug   = {};
 let Ref     = {};
 
 function onRender( dt=0, et=0 ){
-    Ref.data.update( App.camera.position.toArray() );
+    Ref.data.update( App.camera.position.toArray(), App.camera.quaternion.toArray() );
     Ref.rend.update( Ref.data );
 
     App.orbit.enabled = !Ref.data.isDragging;
@@ -44,7 +48,7 @@ window.addEventListener( "load", async _=>{
 
     //data.onTranslate = p=>console.log( 'Translate', p );
 
-    data.setPos( 0, 0.5, 0 );
+    data.setPos( 0, 0.0, 0 );
 
     //console.log( rend );
     rend.toScene( App );
@@ -52,7 +56,47 @@ window.addEventListener( "load", async _=>{
 
     Ref.data = data;
     Ref.rend = rend;
-  
+    
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Ref.attachObject = facedCube( null, 0.5 );
+    App.add( Ref.attachObject );
+
+    data.onTranslate = (pos)=>{
+        Ref.attachObject.position.fromArray( pos );
+    };
+
+    data.onDragStart = ()=>{
+        Ref.initPos = Ref.attachObject.position.toArray();
+        Ref.initRot = Ref.attachObject.quaternion.toArray();
+        Ref.initScl = Ref.attachObject.scale.toArray();
+    };
+
+    data.onRotate = ( steps, axis )=>{
+        const rad = 10 * Math.PI / 180;
+        const q   = quat.axisAngle( axis, rad * -steps );
+        quat.mul( q, Ref.initRot );
+
+        Ref.attachObject.quaternion.fromArray( q );
+        data.hasUpdated = true;
+    };
+
+    data.onScale = ( steps, iAxis )=>{
+        const scl = Ref.initScl.slice( 0 );
+        const inc = steps * 0.1;
+
+        if( iAxis === null ){
+            scl[0] += inc;
+            scl[1] += inc;
+            scl[2] += inc;
+        }else{
+            scl[ iAxis ] += inc;
+        }
+
+        Ref.attachObject.scale.fromArray( scl );
+        data.hasUpdated = true;
+    };
+    
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     App.render();
 });
@@ -77,31 +121,49 @@ window.addEventListener( "pointerup", e=>{
 //#endregion
 
 
-
 //#region LOREM
+const TransformMode = Object.freeze({
+    Translate   : 0,
+    Rotate      : 1,
+    Scale       : 2,
+});
 
 class TranslateData{
     // #region MAIN
     scaleFactor     = 8;            // Rescale axes based on camera distance, to keep gizmo about the same size
     minFlipAdjust   = -0.02;	    // Dot Angle minimum to flip Gizmo
     minHitDistance  = 0.1 ** 2;     // Min Distance to consider touching an axis segment
+    minPntDistance  = 0.035;
+    minArcDistance  = 0.15 ** 2;
     lastCamPos      = [0,0,0];      // Store last cam position to be able to recompute while dragging
+    lastCamRot      = [0,0,0,1];    // Store last cam rotation
     hasUpdated      = true;         // Indicator that the data has changed
     isDragging      = false;        // Is the gizmo currently being dragged by the user
 
     position        = [0,0,0];      // Position in world space
     scale           = [1,1,1];      // Scale based on angle from camera & distance
 
+    midPointLerp    = 0.45;         // How far from origin to mark compute mid points
+    sclPointLerp    = 1.3;          // How far from origin to mark compute scale points
+
     axes            = [             // Information about each axis
-        { dir: [1,0,0], pos:[1,0,0], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // X
-        { dir: [0,1,0], pos:[0,1,0], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Y
-        { dir: [0,0,1], pos:[0,0,1], midPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Z
+        { dir: [1,0,0], endPos:[1,0,0], midPos:[0,0,0], sclPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // X
+        { dir: [0,1,0], endPos:[0,1,0], midPos:[0,0,0], sclPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Y
+        { dir: [0,0,1], endPos:[0,0,1], midPos:[0,0,0], sclPos:[0,0,0], isActive:false, tracePoints:{ a:[0,0,0], b:[0,0,0] } }, // Z
     ];
 
+    traceStep       = 0.1;
+    traceLine       = { isActive:false, hitPos:[0,0,0], origin:[0,0,0], a:[0,0,0], b:[0,0,0], dir:[0,0,0] };
+
+    activeMode      = TransformMode.Translate;
     activeAxis      = -1;
     activePlane     = -1;
 
+    onDragStart     = null;
+    onDragEnd       = null;
     onTranslate     = null;
+    onRotate        = null;
+    onScale         = null;
     // #endregion
 
     // #region METHODS
@@ -120,35 +182,27 @@ class TranslateData{
         return this;
     }
 
-    update( camPos ){
-        if( this.isDragging ||
-            Math.abs( vec3.lenSq( camPos, this.lastCamPos ) ) < 0.00001 
-        ) return;
+    update( camPos, camRot ){
+        if( this.isDragging || (
+            Math.abs( vec3.lenSq( camPos, this.lastCamPos ) ) < 0.00001 &&
+            Math.abs( quat.lenSq( camRot, this.lastCamRot ) ) < 0.00001
+        ) ) return;
 
         vec3.copy( camPos, this.lastCamPos );
+        quat.copy( camRot, this.lastCamRot );
         this._calcCameraScale();
         return this;
     }
     // #endregion
 
     // #region DRAGGING
-    _startDrag(){ this.isDragging = true;  }
-    _stopDrag(){  this.isDragging = false; }
-
-    _moveAxis( ray, i){
-        const segResult = new NearSegmentResult();
-        let axis        = this.axes[ i ].tracePoints;
-
-        if( nearSegment( ray, axis.a, axis.b, segResult ) ){
-
-            vec3.copy( segResult.segPosition, this.position );
-            this._calcAxesPosition(); //this._calcCameraScale();
-
-            if( this.onTranslate ) this.onTranslate( this.position.slice( 0 ) );
-            return true;
-        }
-
-        return false;
+    _startDrag(){
+        this.isDragging = true;
+        if( this.onDragStart ) this.onDragStart();
+    }
+    _stopDrag(){
+        this.isDragging = false;
+        if( this.onDragEnd ) this.onDragEnd();
     }
 
     _movePlane( ray, i ){
@@ -166,6 +220,45 @@ class TranslateData{
         return false;
     }
     
+    _moveTrace( ray ){
+        const segResult = new NearSegmentResult();
+        if( nearSegment( ray, this.traceLine.a, this.traceLine.b, segResult ) ){
+
+            vec3.copy( segResult.segPosition, this.traceLine.hitPos );            
+            
+            switch( this.activeMode ){
+                // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                case TransformMode.Translate:
+                    vec3.copy( segResult.segPosition, this.position );
+                    this._calcAxesPosition();
+
+                    if( this.onTranslate ) this.onTranslate( segResult.segPosition.slice( 0 ) );
+                break;
+
+                // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                case TransformMode.Rotate:
+                case TransformMode.Scale:
+                    const dir   = vec3.sub( segResult.segPosition, this.traceLine.origin, [0,0,0] );
+                    const dist  = vec3.len( dir );
+                    const sign  = Math.sign( vec3.dot( dir, this.traceLine.dir ) );
+                    const step  = ( dist / this.traceStep ) * sign;
+
+                    if( this.activeMode == TransformMode.Rotate && this.onRotate ){
+                        this.onRotate( step, this.axes[ this.activeAxis ].dir );
+                    }
+
+                    if( this.activeMode == TransformMode.Scale && this.onScale ){
+                        this.onScale( step, (this.activeAxis >= 0)? this.activeAxis : null );
+                    }
+                break;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     onRayDown( ray ){
         if( this._rayIntersect( ray ) ){
             this._startDrag();
@@ -181,19 +274,39 @@ class TranslateData{
     onRayMove( ray ){
         if( !this.isDragging ) return false;
 
-        if( this.activeAxis != -1 )  return this._moveAxis( ray, this.activeAxis );
-        if( this.activePlane != -1 ) return this._movePlane( ray, this.activePlane );
+        if( this.activeAxis != -1 ){
+            this._moveTrace( ray );
+        }else if( this.activePlane != -1 ){
+            return this._movePlane( ray, this.activePlane );
+        }
 
         return false;
     }
     // #endregion
-
+    
+    // #region HELPER
     _activateAxis( idx ){
         const ax    = this.axes[ idx ];
         ax.isActive = true;
         vec3.scaleThenAdd( ax.dir, -1000, this.position, ax.tracePoints.a );
         vec3.scaleThenAdd( ax.dir,  1000, this.position, ax.tracePoints.b );
     }
+
+    _setTraceLine( pos, axis=-1 ){
+        this.traceLine.isActive = true;
+        vec3.copy( pos, this.traceLine.origin );
+        vec3.copy( pos, this.traceLine.hitPos );
+
+        if( axis == -1 ){
+            vec3.transformQuat( [1,0,0], this.lastCamRot, this.traceLine.dir );
+        }else{
+            vec3.copy( this.axes[axis].dir, this.traceLine.dir );
+        }
+
+        vec3.scaleThenAdd( this.traceLine.dir, -1000, pos, this.traceLine.a );
+        vec3.scaleThenAdd( this.traceLine.dir,  1000, pos, this.traceLine.b );
+    }
+    // #endregion
 
     // #region COMPUTE
     _calcCameraScale(){
@@ -218,13 +331,17 @@ class TranslateData{
 
     _calcAxesPosition(){
         const a = this.axes;
-        vec3.scaleThenAdd( a[0].dir, this.scale[0], this.position, a[0].pos );
-        vec3.scaleThenAdd( a[1].dir, this.scale[1], this.position, a[1].pos );
-        vec3.scaleThenAdd( a[2].dir, this.scale[2], this.position, a[2].pos );
+        vec3.scaleThenAdd( a[0].dir, this.scale[0], this.position, a[0].endPos );
+        vec3.scaleThenAdd( a[1].dir, this.scale[1], this.position, a[1].endPos );
+        vec3.scaleThenAdd( a[2].dir, this.scale[2], this.position, a[2].endPos );
 
-        vec3.scaleThenAdd( a[0].dir, this.scale[0] * 0.4, this.position, a[0].midPos );
-        vec3.scaleThenAdd( a[1].dir, this.scale[1] * 0.4, this.position, a[1].midPos );
-        vec3.scaleThenAdd( a[2].dir, this.scale[2] * 0.4, this.position, a[2].midPos );
+        vec3.scaleThenAdd( a[0].dir, this.scale[0] * this.midPointLerp, this.position, a[0].midPos );
+        vec3.scaleThenAdd( a[1].dir, this.scale[1] * this.midPointLerp, this.position, a[1].midPos );
+        vec3.scaleThenAdd( a[2].dir, this.scale[2] * this.midPointLerp, this.position, a[2].midPos );
+
+        vec3.scaleThenAdd( a[0].dir, this.scale[0] * this.sclPointLerp, this.position, a[0].sclPos );
+        vec3.scaleThenAdd( a[1].dir, this.scale[1] * this.sclPointLerp, this.position, a[1].sclPos );
+        vec3.scaleThenAdd( a[2].dir, this.scale[2] * this.sclPointLerp, this.position, a[2].sclPos );
 
         this.hasUpdated = true;
     }
@@ -246,11 +363,19 @@ class TranslateData{
             }
         }
 
-        this.activeAxis  = -1;
-        this.activePlane = -1;
+        this.traceLine.isActive = false;
+        this.activeMode         = TransformMode.Translate;
+        this.activeAxis         = -1;
+        this.activePlane        = -1;
+
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        if( ! (hit = this._testPlanes( ray )) ){
-            hit = this._testAxis( ray );
+        
+        if( ! (hit = this._testPoints( ray )) ){
+            if( ! (hit = this._testArc( ray )) ){
+                if( ! (hit = this._testPlanes( ray )) ){
+                    hit = this._testAxis( ray );
+                }
+            }
         }
 
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -267,6 +392,7 @@ class TranslateData{
     _testPlanes( ray ){
         // Test each axis plane by using triangle points
         const a = this.axes;
+    
         let i, ii;
         for( i=0; i < 3; i++ ){  // 0:1 = Z(2), 1:2 = X(0), 2:0 = Y(1) 
             ii = ( i + 1 ) % 3;
@@ -280,8 +406,64 @@ class TranslateData{
         return false;
     }
 
+    _testArc( ray ){
+        const a         = this.axes;
+        const hitPos    = [0,0,0];          // Intersection Hit Position
+        const hitDir    = [0,0,0];          // Direction to Hit point
+        const axis      = [0,0,0];          // Axis for hemisphere testing
+        const radiusSq  = this.scale[0]**2; // Doing distance testing in Squared values
+        
+        let t, dist;
+        let i, ii, iii;
+
+        for( i=0; i < 3; i++ ){
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // First test against the plane using the axis as the plane normal
+            t = intersectPlane( ray, this.position, a[i].dir );
+            if( t === null ) continue;
+
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // Next do a circle radius test of the hit point to plane origin
+            ray.posAt( t, hitPos );
+            dist = vec3.lenSq( this.position, hitPos );
+
+            if( Math.abs( dist - radiusSq ) <= this.minArcDistance ){
+                
+                // ------------------------------------------
+                // Inside circle, Check if in the positive side of the hemisphere
+                // using the next axis direction 
+                ii = ( i + 1 ) % 3;
+
+                // Get direction to hit point
+                vec3.sub( hitPos, this.position, hitDir );
+
+                // Flip axis direction based on camera angle
+                vec3.scale( a[ii].dir, Math.sign( this.scale[ii] ), axis );
+
+                if( vec3.dot( hitDir, axis ) >= 0 ){
+                    // ------------------------------------------
+                    // Do the other hemisphere check with the remaining axis  
+                    iii = ( i + 2 ) % 3;
+
+                    // Flip axis direction based on camera angle
+                    vec3.scale( a[iii].dir, Math.sign( this.scale[iii] ), axis );
+
+                    if( vec3.dot( hitDir, axis ) >= 0 ){
+                        this.activeAxis = i;
+                        this.activeMode = TransformMode.Rotate;
+                        this._setTraceLine( hitPos );
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     _testAxis( ray ){
         const segResult = new NearSegmentResult();
+        const pos       = [ 0, 0, 0 ];
         let min         = Infinity;
         let axis        = -1;
         let ax;
@@ -291,19 +473,45 @@ class TranslateData{
             ax = this.axes[ i ];
             
             // Find the axis with the shortest distance
-            if( nearSegment( ray, this.position, ax.pos, segResult ) ){
+            if( nearSegment( ray, this.position, ax.endPos, segResult ) ){
                 if( segResult.distanceSq <= this.minHitDistance && segResult.distanceSq < min ){
-                    min             = segResult.distanceSq;
-                    axis            = i;
+                    min  = segResult.distanceSq;
+                    axis = i;
+                    vec3.copy( segResult.segPosition, pos );
                 }
             }
         }
 
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         if( axis !== -1 ){
-            this._activateAxis( axis );
             this.activeAxis = axis;
+            this._setTraceLine( pos, axis );
             return true;
+        }
+
+        return false;
+    }
+    
+    _testPoints( ray ){            
+        let t = nearPoint( ray, this.position, this.minPntDistance );
+
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Test for origin, 
+        if( t !== null ){
+            this._setTraceLine( this.position );
+            this.activeMode = TransformMode.Scale;
+            this.activeAxis = -2;
+            return true;
+        }
+        
+        for( let i=0; i < 3; i++ ){
+            t = nearPoint( ray, this.axes[ i ].sclPos , this.minPntDistance );
+            if( t !== null ){
+                this._setTraceLine( this.axes[ i ].sclPos, i );
+                this.activeAxis = i;
+                this.activeMode = TransformMode.Scale;
+                return true;
+            }
         }
 
         return false;
@@ -324,30 +532,40 @@ class TranslateRender{
     update( data ){
         if( data.hasUpdated ){
             data.hasUpdated = false;
-            //console.log( 'draw' );
 
-            const a = [0,0,0];
-            const b = [0,0,0];
+            const a         = [0,0,0];
+            const b         = [0,0,0];
+            const pntSize   = 6;
+            const pntShape  = 2;
             this.meshAxis.reset();
-            this.meshAxis.add( data.position, data.axes[0].pos, 0xffff00 );
-            this.meshAxis.add( data.position, data.axes[1].pos, 0x00ffff );
-            this.meshAxis.add( data.position, data.axes[2].pos, 0x00ff00 );
+            this.meshPoints.reset();
 
+            // Axes Lines
+            this.meshAxis.add( data.position, data.axes[0].endPos, 0xffff00 );
+            this.meshAxis.add( data.position, data.axes[1].endPos, 0x00ffff );
+            this.meshAxis.add( data.position, data.axes[2].endPos, 0x00ff00 );
+
+            // Mind Point lines ( Planes )
             this.meshAxis.add( data.axes[0].midPos, data.axes[1].midPos, 0xffff00, 0x00ffff );
             this.meshAxis.add( data.axes[1].midPos, data.axes[2].midPos, 0x00ffff, 0x00ff00 );
             this.meshAxis.add( data.axes[2].midPos, data.axes[0].midPos, 0x00ff00, 0xffff00 );
 
-            const pntSize   = 8;
-            const pntShape  = 2;
-            this.meshPoints.reset();
-            this.meshPoints.add( data.axes[0].pos, 0xffff00, pntSize * Math.abs( data.scale[0] ), pntShape );
-            this.meshPoints.add( data.axes[1].pos, 0x00ffff, pntSize * Math.abs( data.scale[1] ), pntShape );
-            this.meshPoints.add( data.axes[2].pos, 0x00ff00, pntSize * Math.abs( data.scale[2] ), pntShape );
+            // Draw End Points
+            this.meshPoints.add( data.axes[0].endPos, 0xffff00, pntSize * Math.abs( data.scale[0] ), pntShape );
+            this.meshPoints.add( data.axes[1].endPos, 0x00ffff, pntSize * Math.abs( data.scale[1] ), pntShape );
+            this.meshPoints.add( data.axes[2].endPos, 0x00ff00, pntSize * Math.abs( data.scale[2] ), pntShape );
 
+            // Draw Mid Points
             this.meshPoints.add( data.axes[0].midPos, 0xffff00, 3 * Math.abs( data.scale[0] ), 1 );
             this.meshPoints.add( data.axes[1].midPos, 0x00ffff, 3 * Math.abs( data.scale[1] ), 1 );
             this.meshPoints.add( data.axes[2].midPos, 0x00ff00, 3 * Math.abs( data.scale[2] ), 1 );
 
+            // Draw Scl Points
+            this.meshPoints.add( data.axes[0].sclPos, 0xffff00, 5 * Math.abs( data.scale[0] ), 0 );
+            this.meshPoints.add( data.axes[1].sclPos, 0x00ffff, 5 * Math.abs( data.scale[1] ), 0 );
+            this.meshPoints.add( data.axes[2].sclPos, 0x00ff00, 5 * Math.abs( data.scale[2] ), 0 );
+
+            // Draw axes guides
             let ax;
             for( let i=0; i < 3; i++ ){
                 ax = data.axes[ i ];
@@ -355,10 +573,28 @@ class TranslateRender{
                     this.meshAxis.add( ax.tracePoints.a, ax.tracePoints.b, 0x909090 );
                 }
             }
+
+            // TraceLine
+            if( data.traceLine.isActive ){
+                this.meshAxis.add( data.traceLine.a, data.traceLine.b, 0x909090 );
+                //this.meshPoints.add( data.hitPos, 0xffffff, 5 * Math.abs( data.scale[2] ), 7 );
+                this.meshPoints.add( data.traceLine.origin, 0xffffff, 5 * Math.abs( data.scale[2] ), 7 );
+                //console.log( 'x', data.traceLine.hit );
+                this.meshPoints.add( data.traceLine.hitPos, 0xffffff, 5 * Math.abs( data.scale[2] ), 1 );
+                ///Debug.pnt.add( data.traceLine.hit, 0xffffff, 10 );
+            }
+
+            // Draw Rotation Arcs
+            const xSign = Math.sign( data.scale[0] );
+            const ySign = Math.sign( data.scale[1] );
+            const zSign = Math.sign( data.scale[2] );
+            
+            this.meshAxis.arc( data.position, data.axes[0].dir, data.axes[2].dir, data.scale[0], 6, Math.PI*0.5*xSign*zSign, 0, 0x00ffff );
+            this.meshAxis.arc( data.position, data.axes[1].dir, data.axes[2].dir, data.scale[1], 6, Math.PI*0.5*zSign*ySign, 0, 0xffff00 );
+            this.meshAxis.arc( data.position, data.axes[1].dir, data.axes[0].dir, data.scale[1], 6, Math.PI*0.5*xSign*ySign, 0, 0x00ff00 );
         }
     }
 }
-
 //#endregion
 
 </script>
