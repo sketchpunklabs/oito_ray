@@ -63,6 +63,42 @@ export class BoundingBox{
         return this;
     }
 
+//     grow( v ){
+//         vec3_min( this.min, this.min, v );
+//         vec3_max( this.max, this.max, v );
+//     }
+
+//     area(){
+//         const s = vec3_sub( [0,0,0], this.max, this.min );
+//         return s[0]*s[1] + s[1]*s[2] + s[2]*s[0];
+//     }
+
+    /*
+    //https://tavianator.com/2011/ray_box.html
+    fastIntersect( ray, bmin, bmax ){
+        // Modified to use invDirection to remove any divisions
+        const tx1  = ( bmin[0] - ray.posStart[0] ) * ray.invDirection[0];
+        const tx2  = ( bmax[0] - ray.posStart[0] ) * ray.invDirection[0];
+        const tmin = Math.min( tx1, tx2 );
+        const tmax = Math.max( tx1, tx2 );
+        
+        const ty1  = ( bmin[1] - ray.posStart[1] ) * ray.invDirection[1];
+        const ty2  = ( bmax[1] - ray.posStart[1] ) * ray.invDirection[1];
+        
+        tmin       = Math.max( tmin, Math.min( ty1, ty2 ) ), 
+        tmax       = Math.min( tmax, Math.max( ty1, ty2 ) );
+        
+        const tz1  = ( bmin[2] - ray.posStart[2] ) * ray.invDirection[2];
+        const tz2  = ( bmax[2] - ray.posStart[2] ) * ray.invDirection[2];
+
+        tmin       = Math.max( tmin, Math.min( tz1, tz2 ) ), 
+        tmax       = Math.min( tmax, Math.max( tz1, tz2 ) );
+        
+        // if tmin < 0, origin is inside the box
+        return (tmax >= tmin && tmax > 0)? tmin : Infinity;
+    }
+    */
+
     /** Optimize version that uses AABBRay  */
     rayIntersects( ray: Ray, raybox: AABBRay, results ?: RayBBoxResult ): boolean{
         let tMin, tMax, min, max, minAxis = 0, maxAxis = 0;

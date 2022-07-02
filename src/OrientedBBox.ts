@@ -1,7 +1,7 @@
 //#region IMPORT
 import type { TVec3, Transform }    from "oito";
-import { vec3 }     from 'oito';
-import type Ray     from './Ray.js';
+import { vec3 }                     from 'oito';
+import type Ray                     from './Ray.js';
 //#endregion
 
 export class RayObbResult{

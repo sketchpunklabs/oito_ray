@@ -57,7 +57,7 @@ export default ( { command, mode } ) => {
                 },
 
                 rollupOptions   : {
-                    external    : [ "three", /^three\// ],
+                    external    : [ "oito", /^oito\// ],
                 }
             }
         };

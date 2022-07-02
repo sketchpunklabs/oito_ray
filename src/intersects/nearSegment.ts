@@ -6,6 +6,7 @@ export class NearSegmentResult{
     segPosition = [0,0,0];
     rayPosition = [0,0,0];
     distanceSq  = 0;
+    distance    = 0;
 }
 
 /** Returns [ T of Segment, T of RayLen ] */
@@ -42,6 +43,7 @@ export function nearSegment( ray: Ray, p0: TVec3, p1: TVec3, results ?: NearSegm
         ray.posAt( tV, results.rayPosition );
         vec3.lerp( p0, p1, tU, results.segPosition );
         results.distanceSq = vec3.lenSq( results.segPosition, results.rayPosition );
+        results.distance   = Math.sqrt( results.distanceSq );
     }
 
     return [ tU, tV ];

@@ -1,50 +1,45 @@
 {
-    "name": "oito_ray",
-    "version": "0.0.1",
-    "author": "Pedro Sousa ( Vor @ SketchPunk Labs )",
-    "description": "Ray Intersection Library",
-    "keywords": [],
-    "license": "MIT",
-    "homepage": "https://github.com/sketchpunklabs/oito_ray#readme",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/sketchpunklabs/oito_ray.git"
-    },
-    "bugs": {
-        "url": "https://github.com/sketchpunklabs/oito_ray/issues"
-    },
-    "files": [
-        "dist"
-    ],
-    "main": "./dist/oito_ray.cjs.js",
-    "module": "./dist/oito_ray.es.js",
-    "types": "./dist/oito_ray.d.ts",
-    "exports": {
+    "name"        : "oito_ray",
+    "version"     : "0.0.2",
+    "author"      : "Pedro Sousa ( Vor @ SketchPunk Labs )",
+    "description" : "Ray Intersection Library",
+    "keywords"    : [],
+    "license"     : "MIT",
+    "homepage"    : "https://github.com/sketchpunklabs/oito_ray#readme",
+    "repository"  : { "url": "git+https://github.com/sketchpunklabs/oito_ray.git", "type": "git" },
+    "bugs"        : { "url": "https://github.com/sketchpunklabs/oito_ray/issues" },
+    "files"       : [ "dist" ],
+    "main"        : "./dist/oito_ray.cjs.js",
+    "module"      : "./dist/oito_ray.es.js",
+    "types"       : "./dist/oito_ray.d.ts",
+    "exports"     : {
         ".": {
-            "import": "./dist/oito_ray.es.js",
-            "require": "./dist/oito_ray.cjs.js"
+            "import"  : "./dist/oito_ray.es.js",
+            "require" : "./dist/oito_ray.cjs.js"
         }
     },
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "build:types": "tsc --declaration --noEmit false --emitDeclarationOnly --strict false --outDir ./dist",
-        "build:site": "vite build --mode site",
-        "pack": "npm pack",
-        "preview-site": "vite preview",
-        "lint": "eslint . --ext .ts",
-        "deletePkg": "rd /s /q \"node_modules/oito\"",
-        "installPkg": "npm install file:../oito/oito-0.0.1.tgz --force"
+    "scripts"   : {
+        "dev"           : "vite",
+        "build"         : "vite build",
+        "build:types"   : "tsc --declaration --noEmit false --emitDeclarationOnly --strict false --outDir ./dist",
+        "build:site"    : "vite build --mode site",
+        "pack"          : "npm pack",
+        "preview-site"  : "vite preview",
+        "lint"          : "eslint . --ext .ts",
+        "deletePkg"     : "rd /s /q \"node_modules/oito\"",
+        "installPkg"    : "npm install file:../oito/oito-0.0.1.tgz --force"
     },
-    "dependencies": {
-        "oito": "file:../oito/oito-0.0.1.tgz"
+
+    "dependencies"  : {
+        "oito": "github:sketchpunklabs/oito"
     },
+
     "devDependencies": {
-        "@typescript-eslint/eslint-plugin": "^5.13.0",
-        "@typescript-eslint/parser": "^5.13.0",
-        "eslint": "^8.10.0",
-        "three": "^0.138.2",
-        "typescript": "^4.6.2",
-        "vite": "^2.8.6"
+        "@typescript-eslint/eslint-plugin"  : "^5.13.0",
+        "@typescript-eslint/parser"         : "^5.13.0",
+        "eslint"                            : "^8.10.0",
+        "three"                             : "^0.138.2",
+        "typescript"                        : "^4.6.2",
+        "vite"                              : "^2.8.6"
     }
 }

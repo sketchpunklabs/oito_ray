@@ -39,7 +39,7 @@ export function intersectSphere( ray: Ray, origin: TVec3, radius: number, result
 
         //-----------------------------
         // Separate positions for entry and exit
-		const oLen  = Math.sqrt(  radiusSq - oppLenSq ); // Opposite = sqrt( hyptenuse^2 - adjacent^2 )
+		const oLen  = Math.sqrt( radiusSq - oppLenSq ); // Opposite = sqrt( hyptenuse^2 - adjacent^2 )
 		const t0    = tProj - oLen;
 		const t1    = tProj + oLen;
 
