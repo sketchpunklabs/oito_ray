@@ -1,0 +1,188 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+//#region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+import Ray                          from '../src/Ray';
+//#endregion
+
+//#region MAIN
+let App;
+let Debug   = {};
+let Ref     = {
+    matHit  : new THREE.MeshPhongMaterial({ color: 0xff0000, opacity: 0.1, side: THREE.DoubleSide, transparent: true } ),
+    matMiss : new THREE.MeshPhongMaterial({ color: 0x00ff00, opacity: 0.1, side: THREE.DoubleSide, transparent: true } ),
+    sphere : {
+        radius : 0.5,
+        pos    : null,
+    },
+    box    : {
+        min : [-1,-1,-1],
+        max : [1,1,1],
+        mid : [0,0,0],
+    }
+};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 20, 20, 10, [0,0.8,0] );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+    App.add( ( Ref.boxMesh  = new DynLineMesh() ) );
+
+    Ref.msphere = new THREE.Mesh(
+        new THREE.SphereGeometry( Ref.sphere.radius, 16, 8 ),
+        Ref.matMiss
+    );
+    Ref.msphere.visible = false;
+    App.add( Ref.msphere );
+
+    Ref.boxMesh.box( Ref.box.min, Ref.box.max, 0x808080 );
+    Ref.box.corners = boxCorners( Ref.box );
+    //for( const p of Ref.box.corners ) Debug.pnt.add( p, 0x808080, 4 );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const a = [3.2090126576294136, 3.4175458742899454, 8.821755166835262]
+    const b = [-981.8642226033219, -527.6915919127802, -1684.5795297025743]
+    const r = new Ray().fromEndPoints( a, b );
+    Debug.ln.add( r.posStart, r.posEnd, 0x00ffff );
+    sphereCast_bbox( r, Ref.sphere, Ref.box );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointerdown", e=>{
+    if( e.button != 2 ) return;
+
+    Debug.ln.reset();
+    Debug.pnt.reset();
+
+    // Compute the Ray and visually draw a line
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY );
+    Debug.ln.add( ray.posStart, ray.posEnd, 0x00ffff );
+
+    console.log( ray.posStart, ray.posEnd );
+
+    sphereCast_bbox( ray, Ref.sphere, Ref.box );
+} );
+
+//#endregion
+
+
+//#region LOREM
+function from3JSScreenProjection( ray, xMouse, yMouse ){
+    const size      = new THREE.Vector2();
+    const proj      = App.camera.projectionMatrix.toArray();    // Need Projection Matrix
+    const camWorld  = App.camera.matrixWorld.toArray();         // World Space Transform of Camera
+    App.renderer.getSize( size );                               // Need Size of Canvas
+
+    // Setup Ray
+    ray.fromScreenProjection( xMouse, yMouse, size.x, size.y, proj, camWorld );
+    return ray;
+}
+//#endregion
+
+function sphereCast_bbox( ray, sphere, box ){    
+    sphere.pos = closestPointToSegment( box.mid, ray.posStart, ray.posEnd );
+
+    Debug.pnt.add( box.mid, 0xa0a0a0, 5 );
+    Debug.pnt.add( sphere.pos, 0x00ff00, 3 );
+    Debug.ln.add( box.mid, sphere.pos, 0xa0a0a0, 0x00ff00, true );
+    
+    let hit  = intersect_sphere_aabb( sphere, box );
+
+    if( hit ) console.log( 'MID' );
+    else{
+        let c = 0;
+        for( const p of box.corners ){
+            //if( c == 5 ){
+                sphere.pos = closestPointToSegment( p, ray.posStart, ray.posEnd );
+                Debug.pnt.add( sphere.pos, 0x00ff00, 3 );
+                Debug.pnt.add( p, 0xa0a0a0, 3 );
+                Debug.ln.add( p, sphere.pos, 0xa0a0a0, 0x00ff00, true );
+
+                hit = intersect_sphere_aabb( sphere, box );
+                if( hit ){ 
+                    console.log( 'hit on corner', c );
+                    break;
+                }
+            //}
+            c++;
+        }
+    }
+
+    Ref.msphere.position.fromArray( sphere.pos );
+    Ref.msphere.visible  = true;
+    Ref.msphere.material = hit? Ref.matHit : Ref.matMiss; 
+}
+
+function boxCorners( box ){
+    const x1 = box.min[0];
+    const y1 = box.min[1];
+    const z1 = box.min[2];
+    const x2 = box.max[0];
+    const y2 = box.max[1];
+    const z2 = box.max[2];
+    return [
+        [x1,y1,z1],
+        [x1,y1,z2],
+        [x2,y1,z2],
+        [x2,y1,z1],
+
+        [x1,y2,z1],
+        [x1,y2,z2],
+        [x2,y2,z2],
+        [x2,y2,z1],
+    ];
+}
+
+function closestPointToSegment( p, a, b, out=[0,0,0] ){
+    const dx = b[ 0 ] - a[ 0 ];
+    const dy = b[ 1 ] - a[ 1 ];
+    const dz = b[ 2 ] - a[ 2 ];
+    const t  = ( 
+        ( p[ 0 ] - a[ 0 ] ) * dx + 
+        ( p[ 1 ] - a[ 1 ] ) * dy + 
+        ( p[ 2 ] - a[ 2 ] ) * dz
+    ) / ( dx*dx + dy*dy + dz*dz ) ;
+
+    const ti = 1 - t;
+    out[ 0 ] = a[ 0 ] * ti + b[ 0 ] * t;
+    out[ 1 ] = a[ 1 ] * ti + b[ 1 ] * t;
+    out[ 2 ] = a[ 2 ] * ti + b[ 2 ] * t;
+    return out;
+}
+
+// https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection
+function intersect_sphere_aabb( sphere, box ){
+    // Get the closest box point
+    const x     = Math.max( box.min[ 0 ], Math.min( sphere.pos[ 0 ], box.max[ 0 ] ) );
+    const y     = Math.max( box.min[ 1 ], Math.min( sphere.pos[ 1 ], box.max[ 1 ] ) );
+    const z     = Math.max( box.min[ 2 ], Math.min( sphere.pos[ 2 ], box.max[ 2 ] ) );
+    
+    // Now do a Point inside sphere check
+    const dist  = Math.sqrt(
+        (x - sphere.pos[ 0 ])**2 +
+        (y - sphere.pos[ 1 ])**2 +
+        (z - sphere.pos[ 2 ])**2
+    );
+
+    Debug.pnt.add( [x,y,z], 0xffff00, 3 );
+    Debug.ln.add( [x,y,z], sphere.pos, 0xffff00, 0x00ff00, true );
+
+    console.log( "DIST", dist, sphere.radius );
+
+    return dist < sphere.radius;
+}
+
+// https://stackoverflow.com/questions/34043955/detect-collision-between-sphere-and-triangle-in-three-js
+
+</script>
+</body></html>
