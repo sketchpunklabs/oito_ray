@@ -124,6 +124,8 @@ class Starter{
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
     }
+
+    getRendererSize(){ return this.renderer.getSize( new THREE.Vector2() ).toArray(); }
     // #endregion ////////////////////////////////////////////////////////////////////////////////////////
 
     // #region EVENTS

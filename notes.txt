@@ -1,0 +1,11 @@
+Moving Sphere (SphereCast) vs AABB
+https://gist.github.com/dfbrown/9be30c511c2eb0288daccb89f2ca548e
+
+Ray _ aabb 
+https://gist.github.com/dfbrown/d1f0dc4b95b808f87004dfca9c3e8b9e
+
+Ray aabb GLSL
+https://gist.github.com/DomNomNom/46bb1ce47f68d255fd5d
+
+Ray Capsule
+https://gist.github.com/dfbrown/edbb9b21917d0839f46f6884199812ef
