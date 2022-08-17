@@ -71,5 +71,21 @@ export default class Ray{
         vec3.norm( this.vecLength, this.direction );    // Normalized Vector Length
         return this;
     }
+
+    clone(): Ray{
+        const r = new Ray();
+        vec3.copy( this.posStart, r.posStart );
+        vec3.copy( this.posEnd, r.posEnd );
+        vec3.copy( this.direction, r.direction );
+        vec3.copy( this.vecLength, r.vecLength );    
+        return r;
+    }
+
+    applyMatrix( m: TMat4 ){
+        const a = mat4.transformVec3( m, this.posStart, [0,0,0] );
+        const b = mat4.transformVec3( m, this.posEnd,   [0,0,0] ); 
+        this.fromEndPoints( a, b );
+        return this;
+    }
     //#endregion /////////////////////////////////////////////////////////////////
 }

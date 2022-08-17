@@ -1,0 +1,292 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+
+//#region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+import { from3JSScreenProjection }  from './_lib/UtilRay.js';
+
+import Ray                          from '../src/Ray';
+import intersectAABB                from '../src/intersects/intersectAABB';
+import intersectTri                 from '../src/intersects/intersectTri';
+
+import { vec3, quat, mat4 }               from 'oito';
+import { UtilGltf2, Gltf2 }         from './_lib/UtilGltf2.js';
+//#endregion
+
+//#region MAIN
+let App;
+let Debug   = {};
+let Ref     = {
+    radius  : 0.1,
+    //matHit  : new THREE.MeshPhongMaterial({ color: 0xff0000, opacity: 0.1, side: THREE.DoubleSide, transparent: true } ),
+    //matMiss : new THREE.MeshPhongMaterial({ color: 0x00ff00, opacity: 0.1, side: THREE.DoubleSide, transparent: true } ),
+    // sphere : {
+    //     radius : 0.1,
+    //     pos    : null,
+    // },
+    // box    : {
+    //     min : [-1,-1,-1],
+    //     max : [1,1,1],
+    //     mid : [0,0,0],
+    // }
+};
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 20, 20, 1.5, [0,0.0,0] );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+    App.add( ( Ref.boxMesh  = new DynLineMesh() ) );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const gltf = await Gltf2.fetch( './res/models/suzanne_hpoly.gltf' );
+    let mesh = UtilGltf2.loadMesh( gltf, null, new THREE.MeshPhongMaterial( { flatShading:true }) );
+    mesh.geometry.computeBoundingBox();
+    //mesh.position.z = -2;
+
+    Ref.min  = mesh.geometry.boundingBox.min.toArray();
+    Ref.max  = mesh.geometry.boundingBox.max.toArray();
+    Ref.mesh = mesh;
+    App.add( mesh );
+
+    Ref.listOfMeshes = [ mesh ];
+    Ref.boxMesh.box( Ref.min, Ref.max, 0x808080 );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Just to debug the ray thickness
+    Ref.cylinder = new THREE.Mesh( 
+        new THREE.CylinderGeometry( Ref.radius, Ref.radius, 100, 16 ), 
+        new THREE.MeshPhongMaterial( {color: 0x00ffff, opacity:0.3, transparent:true, side: THREE.DoubleSide } )
+    );
+    App.add( Ref.cylinder );
+    Ref.cylinder.visible = false;
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    App.render();
+});
+
+window.addEventListener( "pointerdown", e=>{
+    if( e.button != 2 ) return;
+
+    Debug.ln.reset();
+    Debug.pnt.reset();
+    
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Compute the Ray and visually draw a line
+    const ray = from3JSScreenProjection( new Ray(), e.layerX, e.layerY, App );
+    Debug.ln.add( ray.posStart, ray.posEnd, 0x00ffff );
+    
+    // Rotate the cylinder so it matches the path of the ray
+    // Since cylinder is created  from the center with verticle direction
+    // its a bit more complicated to get it to aim correctly.
+    const up = ray.direction;
+    const fwd = [0,0,1];
+    const rit = vec3.cross( up, fwd );
+    vec3.cross( rit, up, fwd );
+    vec3.norm( fwd );
+    vec3.norm( rit );
+
+    Ref.cylinder.visible = true;
+    Ref.cylinder.position.fromArray( ray.posStart );
+    Ref.cylinder.quaternion.fromArray( quat.fromAxis( rit, up, fwd ) );
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    const hit = sphereCast( ray, Ref.radius, Ref.listOfMeshes );
+    if( hit ){
+        Debug.pnt.add( hit.hitpos, 0x000000, 1 );
+        console.log( hit.faces );
+    }
+} );
+//#endregion
+
+function sphereCast( ray, radius, aryObject ){
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // https://gist.github.com/dfbrown/9be30c511c2eb0288daccb89f2ca548e
+    // In moving sphere intersect it handles AABB by resizing the box
+    // by the radius of the sphere's radius to make up any space as
+    // an optization trick
+    let bMin, bMax, pos;
+    let tMin   = Infinity;
+    let hitObj = null;
+    for( const obj of aryObject ){
+        // Get Bounding Box in world spalce
+        bMin     = obj.geometry.boundingBox.min.toArray();
+        bMax     = obj.geometry.boundingBox.max.toArray();
+        pos      = obj.position.toArray();
+        
+        vec3.add( bMin, pos );
+        vec3.add( bMax, pos );
+
+        // Expand by Sphere Radius
+        bMin[0] -= radius; bMin[1] -= radius; bMin[2] -= radius;
+        bMax[0] += radius; bMax[1] += radius; bMax[2] += radius;
+
+        // hit Test
+        let hit = intersectAABB( ray, bMin, bMax );
+        if( hit ){
+            if( hit[0] < tMin ){
+                tMin    = hit[ 0 ];
+                hitObj  = obj;
+            }
+        }
+    }
+
+    if( !hitObj ) return null;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // The mesh data exists in localspace, its easier to move the ray
+    // to local space to handle all the sphere & ray intersection tests.
+    hitObj.updateMatrixWorld( true );
+    const mat       = hitObj.matrixWorld.toArray();         // Save to shift hitpos to world space
+    const invMat    = mat4.invert( mat, mat.slice() );      // Invert to move things into local space of mesh
+    const lRay      = ray.clone().applyMatrix( invMat );    // Move ray into local space
+
+    const vert      = hitObj.geometry.attributes.position.array;
+    const ind       = hitObj.geometry.index.array;
+
+    const triMid    = [0,0,0]; 
+    const spos      = [0,0,0]; // Sphere position
+    const triNorm   = [0,0,0]; // Return Triangle Normal on success
+    const idx       = [0,0,0]; // Starting index for each vertex in triangale
+    const tri       = [        // Each vertex position of the triangle
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+    ];
+
+    const rtn       = {
+        hitpos  : [ 0,0,0 ],
+        faces   : [],
+    };
+
+    for( let i=0; i < ind.length; i+=3 ){
+        // Get indices of triangle vertices
+        idx[ 0 ] = ind[ i + 0 ] * 3;
+        idx[ 1 ] = ind[ i + 1 ] * 3;
+        idx[ 2 ] = ind[ i + 2 ] * 3;
+
+        // Vertices of the triangle
+        vec3.fromBuf( vert, idx[0], tri[0] );   
+        vec3.fromBuf( vert, idx[1], tri[1] );
+        vec3.fromBuf( vert, idx[2], tri[2] );
+
+        // Triangle Center
+        vec3.add( tri[0], tri[1], triMid );
+        vec3.add( triMid, tri[2] );
+        vec3.scale( triMid, 1/3 );
+
+        // Find the closest point to sphere collider to triangle
+        closestPointToSegment( triMid, lRay.posStart, lRay.posEnd, spos );
+
+        // Check if sphere intersects the triangle
+        if( !intersectSphereTri( lRay, spos, radius, tri[0], tri[1], tri[2], triNorm ) ) continue;
+
+        // Test ray on triangle to find main point of contact
+        intersectTri( lRay, tri[0], tri[1], tri[2], rtn.hitpos, false );
+
+        // Save triangle to list
+        rtn.faces.push({
+            center : triMid.slice(),
+            norm   : triNorm.slice(),
+        });
+
+        Debug.ln.add( tri[0], tri[1], 0xff0000 );
+        Debug.ln.add( tri[1], tri[2], 0xff0000 );
+        Debug.ln.add( tri[2], tri[0], 0xff0000 );
+    }
+
+    mat4.transformVec3( mat, rtn.hitpos );
+    return rtn;
+}
+
+function closestPointToSegment( p, a, b, out=[0,0,0] ){
+    const dx = b[ 0 ] - a[ 0 ];
+    const dy = b[ 1 ] - a[ 1 ];
+    const dz = b[ 2 ] - a[ 2 ];
+    let   t  = ( 
+        ( p[ 0 ] - a[ 0 ] ) * dx + 
+        ( p[ 1 ] - a[ 1 ] ) * dy + 
+        ( p[ 2 ] - a[ 2 ] ) * dz
+    ) / ( dx*dx + dy*dy + dz*dz ) ;
+
+    t = Math.min( Math.max( t, 0 ), 1 );
+
+    const ti = 1 - t;
+    out[ 0 ] = a[ 0 ] * ti + b[ 0 ] * t;
+    out[ 1 ] = a[ 1 ] * ti + b[ 1 ] * t;
+    out[ 2 ] = a[ 2 ] * ti + b[ 2 ] * t;
+    return out;
+}
+
+// https://wickedengine.net/2020/04/26/capsule-collision-detection/
+function intersectSphereTri( ray, spherePos, radius, v0, v1, v2, onorm=[0,0,0] ){
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // TEST IF SPHERE INTERSECTS TRIANGLE INFINITE PLANE
+    const edg0   = vec3.sub( v1, v0, [0,0,0] );
+    const edg1   = vec3.sub( v2, v0, [0,0,0] );
+    const toCent = vec3.sub( spherePos, v0, [0,0,0] );
+    
+    vec3.cross( edg0, edg1, onorm );
+    vec3.norm( onorm );
+
+    // Distance sphere center is to the plane
+    const cDist  = vec3.dot( toCent, onorm );
+
+    // if( cDist > 0 ) return false; // Backface;
+    if( cDist < -radius || cDist > radius ) return false;  // no intersection'
+
+    // Custom Addition : check if triangle is facing in
+    // the general direction of the the ray origin
+    if( vec3.dot( ray.direction, onorm ) > 0 ) return false;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // FIGURE OUT IF SPHERE CENTER IS INSIDE THE SPHERE
+
+    // Project the sphere center onto the plane
+    const tmp = [0,0,0];
+    const pnt = [0,0,0];
+    vec3.scale( onorm, cDist, tmp );
+    vec3.sub( spherePos, tmp, pnt );
+
+    // Now determine whether projected point is inside all triangle edges
+                 vec3.sub( v2, v1, edg1 );
+    const edg2 = vec3.sub( v0, v2, [0,0,0] );
+    const c0   = vec3.cross( vec3.sub( pnt, v0, tmp ), edg0 );
+    const c1   = vec3.cross( vec3.sub( pnt, v1, tmp ), edg1 );
+    const c2   = vec3.cross( vec3.sub( pnt, v2, tmp ), edg2 );
+
+    const inside = ( 
+        vec3.dot( c0, onorm ) <= 0 &&
+        vec3.dot( c1, onorm ) <= 0 &&
+        vec3.dot( c2, onorm ) <= 0
+    );
+
+    if( inside ) return true;
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // CHECK WHEN CENTER IS NOT INSIDE THE TRIANGLE
+    const radiusSqr = radius**2;
+    let intersects  = false;
+
+    closestPointToSegment( spherePos, v0, v1, tmp ); // point1
+    intersects ||= ( vec3.lenSq( spherePos, tmp ) < radiusSqr );
+
+    closestPointToSegment( spherePos, v1, v2, tmp ); // point2
+    intersects ||= ( vec3.lenSq( spherePos, tmp ) < radiusSqr );
+
+    closestPointToSegment( spherePos, v2, v0, tmp ); // point3
+    intersects ||= ( vec3.lenSq( spherePos, tmp ) < radiusSqr );
+
+    // NOTE, Excluding the part that finds the point of intersection between the two
+    // console.log( 'hit?', inside, intersects );
+    return intersects;
+}
+
+</script>
+</body></html>

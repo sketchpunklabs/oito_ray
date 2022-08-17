@@ -34,8 +34,6 @@ export default function intersectTri( ray: Ray, v0: TVec3, v1: TVec3, v2: TVec3,
 }
 
 
-
-
 /*
 
 // Closure version which is more memory efficent, better to use when dealing with large number of
