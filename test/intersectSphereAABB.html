@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title></head><body>
+<script type="module">
+// #region IMPORTS
+import Starter, { THREE }           from './_lib/Starter.js';
+import ShapePointsMesh              from './_lib/ShapePointsMesh.js';
+import DynLineMesh                  from './_lib/DynLineMesh.js';
+import { Manipulator3D }            from './_lib/manipulator3d.es.js';
+
+import { vec3, quat }               from 'oito';
+// #endregion
+
+// #region MAIN
+let App;
+let Debug   = {};
+let Ref     = {};
+
+function onRender( dt=0, et=0 ){
+    // const bMin = Ref.cube.geometry.boundingBox.min.toArray();
+    // const bMax = Ref.cube.geometry.boundingBox.max.toArray();
+    // const bPos = Ref.cube.position.toArray();
+    // vec3.add( bMin, bPos );
+    // vec3.add( bMax, bPos );
+
+    // if( Ref.frustum.intersectBox( bMin, bMax ) == true ){
+    // //if( Ref.frustum.intersectAABB( bMin, bMax ) >= 0 ){
+    //     Ref.cube.material.color.set( 0xff0000 );
+    // }else{
+    //     Ref.cube.material.color.set( 0x00ff00 );
+    // }
+
+    // const sPos = Ref.sphere.position.toArray();
+    // if( Ref.frustum.intersectSphere( sPos, 0.5 ) ){
+    //     Ref.sphere.material.color.set( 0xff0000 );
+    // }else{
+    //     Ref.sphere.material.color.set( 0x00ff00 );
+    // }
+
+    // const pPos = Ref.pnt.position.toArray();
+    // if( Ref.frustum.containsPoint( pPos ) ){
+    //     Ref.pnt.reset().add( [0,0,0], 0xff0000, 3 );
+    // }else{
+    //     Ref.pnt.reset().add( [0,0,0], 0x00ff00, 3 );
+    // }
+}
+
+window.addEventListener( "load", async _=>{
+    App = new Starter( { webgl2:true, grid:true } );
+    App.setCamera( 0, 20, 6, [0,0.0,0] );
+    App.onRender = onRender;
+
+    App.add( ( Debug.pnt = new ShapePointsMesh() ) );
+    App.add( ( Debug.ln  = new DynLineMesh() ) );
+
+    setupManipulator();
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Ref.cube = new THREE.Mesh(
+        new THREE.BoxGeometry( 0.5, 0.5, 0.5 ), 
+        new THREE.MeshPhongMaterial( { color: 0x00ff00 } )
+    );
+    Ref.cube.position.set( 2, 0, 0 );
+    Ref.cube.geometry.computeBoundingBox();
+    App.add( Ref.cube );
+
+    Ref.sphere = new THREE.Mesh(
+        new THREE.SphereGeometry( 0.5, 16, 8 ),
+        new THREE.MeshPhongMaterial( { color: 0x00ff00 } )
+    );
+    Ref.sphere.position.set( -2, 0, 0 );
+    Ref.sphere.geometry.computeBoundingBox();
+    App.add( Ref.sphere );
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    onRender();
+    App.render();
+});
+// #endregion
+
+function setupManipulator(){
+    Ref.man = new Manipulator3D( App.scene, App.camera, App.renderer );
+    
+    // Hook into events to disable camera controller when user does a drag action
+    Ref.man.on( 'dragend', ()=>{   App.orbit.enabled = true; } );
+    Ref.man.on( 'dragstart', ()=>{ App.orbit.enabled = false; } );
+
+    Ref.man.on( 'translate', e=>{ 
+        const bMin = Ref.cube.geometry.boundingBox.min.toArray();
+        const bMax = Ref.cube.geometry.boundingBox.max.toArray();
+        const bPos = Ref.cube.position.toArray();
+        vec3.add( bMin, bPos );
+        vec3.add( bMax, bPos );
+
+        Ref.sphere.position.fromArray( e.detail );
+
+        if( intersectSphereAABB_opt( e.detail, 0.5, bMin, bMax ) ){
+            Ref.cube.material.color.set( 0xff0000 );
+        }else{
+            Ref.cube.material.color.set( 0x00ff00 );
+        }
+    });
+
+    // Turn on gizmo
+    Ref.man
+        .setScaleFactor( 16 )
+        .setActive( true )
+        .useRotate( false )
+        .useScale( false )
+        .useTranslate( true )
+        .update( true ); // Apply scale factor right away
+
+    //Ref.man.moveTo( Ref.fauxCameraPos );
+}
+
+// #region LOREM
+
+function intersectSphereAABB( pos, radius, bMin, bMax ){
+    const cPos   = closestPointAABB( pos, bMin, bMax );
+    const sqDist = vec3.lenSq( pos, cPos );
+
+    return sqDist < radius*radius;
+}
+
+
+function intersectSphereAABB_opt( pos, radius, bMin, bMax ){
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Closest Point to AABB
+    const x = ( pos[0] > bMax[0] )? bMax[0] :
+              ( pos[0] < bMin[0] )? bMin[0] : pos[0];
+
+    const y = ( pos[1] > bMax[1] )? bMax[1] :
+              ( pos[1] < bMin[1] )? bMin[1] : pos[1];
+
+    const z = ( pos[2] > bMax[2] )? bMax[2] :
+              ( pos[2] < bMin[2] )? bMin[2] : pos[2];
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // vec3 length squared
+    const sqDist = ( pos[0] - x )**2 +
+                   ( pos[1] - y )**2 +
+                   ( pos[2] - z )**2;
+
+    return sqDist < radius*radius;
+}
+
+
+function closestPointAABB( pos, bMin, bMax, out=[0,0,0] ){
+    out[0] = ( pos[0] > bMax[0] )? bMax[0] :
+             ( pos[0] < bMin[0] )? bMin[0] : pos[0];
+
+    out[1] = ( pos[1] > bMax[1] )? bMax[1] :
+             ( pos[1] < bMin[1] )? bMin[1] : pos[1];
+
+    out[2] = ( pos[2] > bMax[2] )? bMax[2] :
+             ( pos[2] < bMin[2] )? bMin[2] : pos[2];
+
+    return out;
+}
+
+//#endregion
+
+</script>
+</body></html>
