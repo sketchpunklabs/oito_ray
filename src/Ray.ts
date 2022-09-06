@@ -31,12 +31,12 @@ export default class Ray{
 
     fromScreenProjection( x: number, y:number, w:number, h:number, projMatrix: TMat4, camMatrix: TMat4 ) : Ray{
         // http://antongerdelan.net/opengl/raycasting.html
-		// Normalize Device Coordinate
+        // Normalize Device Coordinate
         const nx  = x / w * 2 - 1;
         const ny  = 1 - y / h * 2;
 
         // inverseWorldMatrix = invert( ProjectionMatrix * ViewMatrix ) OR
-		// inverseWorldMatrix = localMatrix * invert( ProjectionMatrix ) 
+        // inverseWorldMatrix = localMatrix * invert( ProjectionMatrix ) 
         const invMatrix = mat4.invert( projMatrix )
         mat4.mul( camMatrix, invMatrix, invMatrix );
         

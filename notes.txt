@@ -9,3 +9,7 @@ https://gist.github.com/DomNomNom/46bb1ce47f68d255fd5d
 
 Ray Capsule
 https://gist.github.com/dfbrown/edbb9b21917d0839f46f6884199812ef
+
+
+Has LOTS of colision and ray stuff
+https://gdbooks.gitbooks.io/3dcollisions/content/Chapter4/closest_point_to_triangle.html
