@@ -13,3 +13,6 @@ https://gist.github.com/dfbrown/edbb9b21917d0839f46f6884199812ef
 
 Has LOTS of colision and ray stuff
 https://gdbooks.gitbooks.io/3dcollisions/content/Chapter4/closest_point_to_triangle.html
+
+2D Intersection Tests for Polygons
+https://gorillasun.de/blog/an-algorithm-for-polygon-intersections
