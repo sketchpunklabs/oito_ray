@@ -12,3 +12,20 @@ export default function intersectPlane( ray:Ray, planePos: TVec3, planeNorm: TVe
     const t = vec3.dot( vec3.sub( planePos, ray.posStart, [0,0,0] ), planeNorm ) / denom;
     return ( t >= 0 )? t : null;
 }
+
+
+/** T returned is scale to direction length, not vector length */
+/* An alternative way to intersect, needs plane constant to work, so I added its computation into the function.
+function intersectPlane2( ray, planePos, planeNorm ){
+    const denom      = vec3.dot( planeNorm, ray.direction );
+    const planeConst = -vec3.dot( planePos, planeNorm );
+
+    if( denom === 0 ){
+        // Distance to plane is zero, then its coplanar, meaning the start of the ray is on the plane
+        return ( ( vec3.dot( planeNorm, ray.posStart ) + planeConst) === 0 )? 0 : null;
+    }
+    
+    const t = - ( vec3.dot( ray.posStart, planeNorm ) + planeConst ) / denom;
+    return t >= 0 ? t : null;
+}
+*/
